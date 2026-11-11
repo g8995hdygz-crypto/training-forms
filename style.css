@@ -13,3 +13,7 @@
 .field-help{display:block;margin-top:6px;color:#7f5b22;font-size:13px;white-space:normal}
 
 textarea.calculated{background:#edf1f4;color:#244859;cursor:default}textarea[aria-invalid=true]{border:2px solid #b44343}#calculationStatus{color:#a83434;white-space:pre-wrap}
+
+textarea.linked-field{background:#eef2f7;color:#3b5368;cursor:default}.choices input:disabled{opacity:.8;cursor:default}#referencePanel{border-left:4px solid #4b7c92}#referenceStatus{color:#426477;font-size:14px}
+
+.choices label:has(input:disabled){cursor:default}
