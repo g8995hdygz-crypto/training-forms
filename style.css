@@ -17,3 +17,9 @@ textarea.calculated{background:#edf1f4;color:#244859;cursor:default}textarea[ari
 textarea.linked-field{background:#eef2f7;color:#3b5368;cursor:default}.choices input:disabled{opacity:.8;cursor:default}#referencePanel{border-left:4px solid #4b7c92}#referenceStatus{color:#426477;font-size:14px}
 
 .choices label:has(input:disabled){cursor:default}
+
+output.linked-value{display:block;min-height:40px;padding:10px;border:1px solid #c4d0dd;border-radius:5px;background:#eef2f7;color:#314b62;white-space:pre-wrap;user-select:text;cursor:text}
+
+#grid input[type=date]{display:inline-block;min-width:175px;margin:6px 10px}#grid input[aria-invalid=true]{border:2px solid #b44343}
+
+td.category-label{vertical-align:top;padding-top:12px;font-weight:500}
