@@ -11,3 +11,5 @@
 [hidden]{display:none!important}.active:hover{background:#0d535d;color:white}
 
 .field-help{display:block;margin-top:6px;color:#7f5b22;font-size:13px;white-space:normal}
+
+textarea.calculated{background:#edf1f4;color:#244859;cursor:default}textarea[aria-invalid=true]{border:2px solid #b44343}#calculationStatus{color:#a83434;white-space:pre-wrap}
