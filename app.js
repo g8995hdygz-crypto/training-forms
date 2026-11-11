@@ -19,7 +19,7 @@ function extraRef(b,id,col){return 'repeat-'+b.header+'-'+id+'-'+col}
 function allowed(f,extras={}){const a=new Set();f.sheets.forEach((s,i)=>s.rows.forEach(r=>r.forEach(c=>{if(c.input||c.check)a.add(i+':'+c.ref)})));f.sheets.forEach((_,si)=>rosters(f,si).forEach(b=>(extras[b.id]||[]).forEach(id=>b.columns.forEach(c=>a.add(si+':'+extraRef(b,id,c))))));return a}
 function storageKey(){return 'training-form-v1:'+current.id+':'+$('year').value}
 function checkYear(y){if(!Number.isInteger(Number(y))||Number(y)<2020||Number(y)>2100)throw Error('평가 연도'+'를 확인하세요.')}
-function validate(data,allowNumericErrors=false){if(data.version!==1)throw Error('지원하지 않는 작성 파일입니다.');const f=forms.find(f=>f.id===data.formId);if(!f)throw Error('양식을 찾을 수 없습니다.');if(f.conferenceHub)throw Error('집담회는 수련과를 선택한 개별 파일로 제출하세요.');checkYear(data.year);if(!data.answers||typeof data.answers!=='object'||Array.isArray(data.answers))throw Error('입력값 형식이 다릅니다.');for(const ref of f.retiredRefs||[])delete data.answers[ref];
+function validate(data,allowNumericErrors=false){if(data.version!==1)throw Error('지원하지 않는 작성 파일입니다.');const f=forms.find(f=>f.id===data.formId);if(!f)throw Error('양식을 찾을 수 없습니다.');if(f.conferenceHub)throw Error('집담회는 수련과를 선택한 개별 파일로 제출하세요.');checkYear(data.year);if(!data.answers||typeof data.answers!=='object'||Array.isArray(data.answers))throw Error('입력값 형식이 다릅니다.');for(const [from,to] of Object.entries(f.answerAliases||{})){if(!data.answers[to]&&data.answers[from])data.answers[to]=data.answers[from];delete data.answers[from];}for(const ref of f.retiredRefs||[])delete data.answers[ref];
  const extras=data.extraRows||{};
  for(const band of f.retiredRosterIds||[]){const [si,header]=band.split(':');delete extras[band];for(const ref of Object.keys(data.answers))if(ref.startsWith(si+':repeat-'+header+'-'))delete data.answers[ref];}
  data.extraRows=extras;if(!extras||typeof extras!=='object'||Array.isArray(extras))throw Error('추가 행 형식이 다릅니다.');
@@ -42,7 +42,7 @@ function choiceGroup(c){
  const s=current.sheets[sheetIndex],cell=ref=>s.rows.flat().find(v=>v.ref===ref)?.label;
  const r=Number(c.ref.match(/\d+/)?.[0]);
  if(cell('B14')==='병원구분'&&r===14)return 'hospital-kind';
- if(cell('B15')==='병원설립'&&r>=15&&r<=20)return 'hospital-owner';
+ if(cell('B15')?.startsWith('병원설립')&&r>=15&&r<=20)return 'hospital-owner';
  if(cell('B21')?.includes('전공의')&&r>=21&&r<=23)return 'hospital-training';
  if(cell('B24')?.includes('응급진료')&&r>=24&&r<=26)return 'hospital-emergency';
  return null;
