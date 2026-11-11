@@ -12,7 +12,7 @@ function rosters(f,si){
  const template=rows[i+1].filter(c=>c.input),columns=template.map(c=>c.ref.replace(/\d+/,''));
  if(template.some(c=>c.span[0]!==1)||rows.slice(i+1,end).some(r=>r.filter(c=>c.input).map(c=>c.ref.replace(/\d+/,'')).join()!==columns.join()))return;
  const title=(rows[i-1]||[]).map(c=>c.label).filter(Boolean).join(' ')||'명단';
- out.push({id:si+':'+row[0].ref,header:row[0].ref,title,end:end-1,template,columns,labels:row.filter(c=>c.label).map(c=>c.label),width:row.reduce((n,c)=>n+c.span[1],0)});
+ out.push({id:si+':'+row[0].ref,header:row[0].ref,title,start:i,end:end-1,template,columns,labels:row.filter(c=>c.label).map(c=>c.label),width:row.reduce((n,c)=>n+c.span[1],0)});
  });return out;
 }
 function extraRef(b,id,col){return 'repeat-'+b.header+'-'+id+'-'+col}
@@ -70,10 +70,14 @@ function cellNode(c,ref=c.ref,label=''){
 }
 function renderSheet(){
  const s=current.sheets[sheetIndex],bands=rosters(current,sheetIndex);$('sheetTitle').textContent=s.name;$('grid').replaceChildren();if(!s.rows.length){$('grid').append(node('caption',s.scopeNote||'이 부서의 작성 대상이 없습니다.'));return;}
- s.rows.forEach((row,index)=>{const tr=document.createElement('tr');row.forEach(c=>tr.append(cellNode(c)));$('grid').append(tr);
+ s.rows.forEach((row,index)=>{const tr=document.createElement('tr');row.forEach(c=>tr.append(cellNode(c)));
+ if(bands.length){const heading=bands.find(b=>b.start===index),body=bands.find(b=>index>b.start&&index<=b.end);const management=document.createElement(heading?'th':'td');management.className=heading||body?'row-management':'row-management-spacer';if(heading){management.scope='col';management.textContent='행 관리';}else if(!body){management.setAttribute('aria-hidden','true');}tr.append(management);}
+ $('grid').append(tr);
  for(const b of bands.filter(b=>b.end===index)){
- (extraRows[b.id]||[]).forEach((id,n)=>{const tr=document.createElement('tr');tr.className='extra-row';b.template.forEach((c,i)=>{const td=cellNode(c,extraRef(b,id,b.columns[i]),b.title+' 추가 '+(n+1)+' '+(b.labels[i]||b.columns[i]));if(i===0){const remove=node('button','추가 행 삭제');remove.type='button';remove.className='remove-row';remove.setAttribute('aria-label',b.title+' 추가 '+(n+1)+' 삭제');remove.onclick=()=>{const refs=b.columns.map(col=>key(extraRef(b,id,col)));if(refs.some(ref=>answers[ref])&&!confirm('이 추가 행의 입력 내용을 삭제할까요?'))return;extraRows[b.id]=extraRows[b.id].filter(v=>v!==id);refs.forEach(ref=>delete answers[ref]);edit();renderSheet()};td.append(remove)}tr.append(td)});$('grid').append(tr)});
- const action=document.createElement('tr'),td=document.createElement('td');td.colSpan=b.width;td.className='roster-actions';const add=node('button','+ 명단 행 추가');add.setAttribute('aria-label',b.title+' 행 추가');add.onclick=()=>{const ids=extraRows[b.id]||[];if(ids.length>=500){message('한 명단당 추가 행은 500개까지 지원합니다.');return}extraRows[b.id]=[...ids,'r'+crypto.randomUUID().replaceAll('-','').slice(0,24)];edit();renderSheet();const added=$('grid').querySelector('[data-ref="'+extraRef(b,extraRows[b.id].at(-1),b.columns[0])+'"]');added?.focus()};td.append(node('span',b.title+' · '),add);action.append(td);$('grid').append(action);
+ (extraRows[b.id]||[]).forEach((id,n)=>{const tr=document.createElement('tr');tr.className='extra-row';
+ b.template.forEach((c,i)=>tr.append(cellNode(c,extraRef(b,id,b.columns[i]),b.title+' 추가 '+(n+1)+' '+(b.labels[i]||b.columns[i]))));
+ const management=document.createElement('td');management.className='row-management';const remove=node('button','삭제');remove.type='button';remove.className='remove-row';remove.setAttribute('aria-label',b.title+' 추가 '+(n+1)+' 삭제');remove.onclick=()=>{const refs=b.columns.map(col=>key(extraRef(b,id,col)));if(refs.some(ref=>answers[ref])&&!confirm('이 추가 행의 입력 내용을 삭제할까요?'))return;extraRows[b.id]=extraRows[b.id].filter(v=>v!==id);refs.forEach(ref=>delete answers[ref]);edit();renderSheet()};management.append(remove);tr.append(management);$('grid').append(tr)});
+ const action=document.createElement('tr'),td=document.createElement('td');td.colSpan=b.width+1;td.className='roster-actions';const add=node('button','+ 명단 행 추가');add.setAttribute('aria-label',b.title+' 행 추가');add.onclick=()=>{const ids=extraRows[b.id]||[];if(ids.length>=500){message('한 명단당 추가 행은 500개까지 지원합니다.');return}extraRows[b.id]=[...ids,'r'+crypto.randomUUID().replaceAll('-','').slice(0,24)];edit();renderSheet();const added=$('grid').querySelector('[data-ref="'+extraRef(b,extraRows[b.id].at(-1),b.columns[0])+'"]');added?.focus()};td.append(node('span',b.title+' · '),add);action.append(td);$('grid').append(action);
  }
  });[...$('tabs').children].forEach((b,i)=>b.classList.toggle('active',i===sheetIndex));
 }
