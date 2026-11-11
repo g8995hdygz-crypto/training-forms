@@ -5,3 +5,7 @@
 .choices{display:flex;flex-direction:column;gap:9px;min-width:160px;white-space:normal}.choices label{display:inline-flex;gap:5px;align-items:center;cursor:pointer}.choices input[type=radio],.choices input[type=checkbox]{width:18px;height:18px;flex-shrink:0}.choices input[type=text]{display:block;max-width:240px;width:100%;margin-top:5px}.choices input:disabled{background:#edf1f4}.choices small{display:block;color:#9b542c}.clear-choice{font-size:12px;padding:5px 9px;align-self:flex-start;color:#617489}
 
 .row-management{width:86px;min-width:86px;text-align:center;vertical-align:middle;white-space:nowrap}th.row-management{background:#edf4f8;font-weight:600}.row-management-spacer{border:none;background:white;padding:0;width:86px;min-width:86px}.extra-row textarea{display:block;margin:0}.extra-row td{vertical-align:middle}
+
+.department-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+
+[hidden]{display:none!important}.active:hover{background:#0d535d;color:white}
