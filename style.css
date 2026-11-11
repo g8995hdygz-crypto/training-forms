@@ -9,3 +9,5 @@
 .department-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
 
 [hidden]{display:none!important}.active:hover{background:#0d535d;color:white}
+
+.field-help{display:block;margin-top:6px;color:#7f5b22;font-size:13px;white-space:normal}
