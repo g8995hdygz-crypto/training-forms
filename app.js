@@ -1,18 +1,81 @@
 'use strict';
-const $=id=>document.getElementById(id);let forms=[],current=null,answers={},notes='',sheetIndex=0,dirty=false,imports=new Map();
+const $=id=>document.getElementById(id);let forms=[],current=null,answers={},extraRows={},notes='',sheetIndex=0,dirty=false,imports=new Map();
 const node=(tag,text)=>{const n=document.createElement(tag);n.textContent=text;return n};
 function message(text){$('message').textContent=text}
 function key(ref,sheet=sheetIndex){return sheet+':'+ref}
-function allowed(f){const a=new Set();f.sheets.forEach((s,i)=>s.rows.forEach(r=>r.forEach(c=>{if(c.input||c.check)a.add(i+':'+c.ref)})));return a}
+function rosters(f,si){
+ const rows=f.sheets[si].rows,out=[];
+ rows.forEach((row,i)=>{const labels=row.map(c=>c.label.trim());
+ if(!labels.includes('성명')||!labels.some(t=>['면허번호','경력','담당업무'].includes(t)))return;
+ let end=i+1;while(end<rows.length&&rows[end].every(c=>!c.label)&&rows[end].some(c=>c.input))end++;
+ if(end===i+1)return;
+ const template=rows[i+1].filter(c=>c.input),columns=template.map(c=>c.ref.replace(/\d+/,''));
+ if(template.some(c=>c.span[0]!==1)||rows.slice(i+1,end).some(r=>r.filter(c=>c.input).map(c=>c.ref.replace(/\d+/,'')).join()!==columns.join()))return;
+ const title=(rows[i-1]||[]).map(c=>c.label).filter(Boolean).join(' ')||'명단';
+ out.push({id:si+':'+row[0].ref,header:row[0].ref,title,end:end-1,template,columns,labels:row.filter(c=>c.label).map(c=>c.label),width:row.reduce((n,c)=>n+c.span[1],0)});
+ });return out;
+}
+function extraRef(b,id,col){return 'repeat-'+b.header+'-'+id+'-'+col}
+function allowed(f,extras={}){const a=new Set();f.sheets.forEach((s,i)=>s.rows.forEach(r=>r.forEach(c=>{if(c.input||c.check)a.add(i+':'+c.ref)})));f.sheets.forEach((_,si)=>rosters(f,si).forEach(b=>(extras[b.id]||[]).forEach(id=>b.columns.forEach(c=>a.add(si+':'+extraRef(b,id,c))))));return a}
 function storageKey(){return 'training-form-v1:'+current.id+':'+$('year').value}
 function checkYear(y){if(!Number.isInteger(Number(y))||Number(y)<2020||Number(y)>2100)throw Error('평가 연도'+'를 확인하세요.')}
-function validate(data){if(data.version!==1)throw Error('지원하지 않는 작성 파일입니다.');const f=forms.find(f=>f.id===data.formId);if(!f)throw Error('양식을 찾을 수 없습니다.');checkYear(data.year);if(!data.answers||typeof data.answers!=='object'||Array.isArray(data.answers))throw Error('입력값 형식이 다릅니다.');const a=allowed(f);for(const [k,v] of Object.entries(data.answers))if(!a.has(k)||typeof v!=='string'||v.length>4000)throw Error('지원하지 않는 항목이 포함되어 있습니다.');if(typeof data.note!=='string'||data.note.length>2000)throw Error('전달 내용 형식을 확인하세요.');return f}
-function payload(){checkYear($('year').value);return {version:1,formId:current.id,department:current.title,category:current.category,year:Number($('year').value),answers:{...answers},note:$('note').value,createdAt:new Date().toISOString(),confirmed:$('confirmed').checked}}
+function validate(data){if(data.version!==1)throw Error('지원하지 않는 작성 파일입니다.');const f=forms.find(f=>f.id===data.formId);if(!f)throw Error('양식을 찾을 수 없습니다.');checkYear(data.year);if(!data.answers||typeof data.answers!=='object'||Array.isArray(data.answers))throw Error('입력값 형식이 다릅니다.');const extras=data.extraRows||{};if(!extras||typeof extras!=='object'||Array.isArray(extras))throw Error('추가 행 형식이 다릅니다.');
+ const bands=new Map(f.sheets.flatMap((_,si)=>rosters(f,si)).map(b=>[b.id,b]));
+ for(const [k,ids] of Object.entries(extras)){if(!bands.has(k)||!Array.isArray(ids)||ids.length>500||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||!/^r[a-z0-9]{1,31}$/.test(id)))throw Error('추가 명단 행 정보를 확인하세요.');}
+ if(f.category==='진료과'){for(const k of Object.keys(data.answers)){const m=k.match(/^\d+:[A-Z]+(\d+)$/);if(m&&Number(m[1])>=3&&Number(m[1])<=18)delete data.answers[k];}}
+ const a=allowed(f,extras);for(const [k,v] of Object.entries(data.answers))if(!a.has(k)||typeof v!=='string'||v.length>4000)throw Error('지원하지 않는 항목이 포함되어 있습니다.');if(typeof data.note!=='string'||data.note.length>2000)throw Error('전달 내용 형식을 확인하세요.');return f}
+function payload(){checkYear($('year').value);return {version:1,formId:current.id,department:current.title,category:current.category,year:Number($('year').value),answers:{...answers},extraRows:structuredClone(extraRows),note:$('note').value,createdAt:new Date().toISOString(),confirmed:$('confirmed').checked}}
 function stash(){const data=payload();localStorage.setItem(storageKey(),JSON.stringify(data));dirty=false;message('이 브라우저에 임시 저장했습니다. 다른 컴퓨터에서는 제출 파일을 불러오세요.')}
 function edit(){dirty=true;$('confirmed').checked=false}
-function renderSheet(){const s=current.sheets[sheetIndex];$('sheetTitle').textContent=s.name;$('grid').replaceChildren();s.rows.forEach(row=>{const tr=document.createElement('tr');row.forEach(c=>{const td=document.createElement('td');td.rowSpan=c.span[0];td.colSpan=c.span[1];if(c.label){td.classList.add('label');td.append(node('span',c.label))}if(c.highlight)td.classList.add('highlight');if(c.input||c.check){const input=document.createElement('textarea');input.value=answers[key(c.ref)]||'';input.maxLength=4000;input.setAttribute('aria-label',s.name+' '+c.ref+(c.label?' '+c.label:''));input.dataset.ref=c.ref;if(c.check)input.placeholder='해당 항목을 적어주세요';input.oninput=()=>{const k=key(c.ref);if(input.value)answers[k]=input.value;else delete answers[k];edit()};td.append(input)}tr.append(td)});$('grid').append(tr)});[...$('tabs').children].forEach((b,i)=>b.classList.toggle('active',i===sheetIndex))}
+function choicesFor(c){
+ const parts=c.label.split(/\[\s*\]/).slice(1).map(s=>s.trim()).filter(Boolean);
+ if(!parts.length){const row=current.sheets[sheetIndex].rows.find(row=>row.some(v=>v.ref===c.ref));const index=row?.findIndex(v=>v.ref===c.ref);const next=row?.slice(index+1).find(v=>v.label&&!v.check);parts.push(next?.label.trim()||'선택');}
+ const compact=parts.map(s=>s.replace(/\s/g,''));
+ const single=compact.includes('있음')&&compact.includes('없음')||compact.includes('분리함')&&compact.includes('분리하지않음')||compact.includes('구분함')&&compact.includes('구분하지않음')||compact.includes('2교대')&&compact.includes('3교대')||compact.includes('병원직영')&&compact.includes('위탁운영')||compact.includes('D.D.C.')||compact.includes('KORMARC');
+ return {single,options:parts.map(raw=>{const placeholder=raw.match(/\(\s*(?:(과명|전체 장치 수)\s*:\s*)?(개|대|명|병상|㎡)?\s*\)/);return {raw,label:placeholder?raw.replace(placeholder[0],'').trim():raw,detail:!!placeholder,unit:placeholder?.[2]||'',hint:placeholder?.[1]||'상세'}})};
+}
+function choiceGroup(c){
+ const s=current.sheets[sheetIndex],cell=ref=>s.rows.flat().find(v=>v.ref===ref)?.label;
+ const r=Number(c.ref.match(/\d+/)?.[0]);
+ if(cell('B14')==='병원구분'&&r===14)return 'hospital-kind';
+ if(cell('B15')==='병원설립'&&r>=15&&r<=20)return 'hospital-owner';
+ if(cell('B21')?.includes('전공의')&&r>=21&&r<=23)return 'hospital-training';
+ if(cell('B24')?.includes('응급진료')&&r>=24&&r<=26)return 'hospital-emergency';
+ return null;
+}
+function parseChoice(value,options){const lines=(value||'').split('\n'),selected=new Map();for(const o of options){const line=lines.find(v=>v===o.raw||v===o.label||v.startsWith(o.label+' | '));if(line!==undefined)selected.set(o.raw,line.startsWith(o.label+' | ')?line.slice((o.label+' | ').length):'')}return selected}
+function choiceNode(c,td){
+ const spec=choicesFor(c);if(!spec)return false;const ref=c.ref,k=key(ref),group=choiceGroup(c),single=spec.single||!!group,selected=parseChoice(answers[k],spec.options),box=document.createElement('div');box.className='choices';box.setAttribute('role',single?'radiogroup':'group');box.setAttribute('aria-label',current.sheets[sheetIndex].name+' '+c.ref+' 선택');
+ const controls=[];
+ const update=()=>{const lines=controls.filter(v=>v.control.checked).map(v=>v.option.label+(v.option.detail&&v.detail.value?' | '+v.detail.value:''));
+  if(group){for(const other of current.sheets[sheetIndex].rows.flat().filter(v=>v.check&&choiceGroup(v)===group))if(other.ref!==ref)delete answers[key(other.ref)];}
+  if(lines.length)answers[k]=lines.join('\n');else delete answers[k];edit();
+ };
+ for(const [i,o] of spec.options.entries()){
+  const row=document.createElement('div'),label=document.createElement('label'),control=document.createElement('input');control.type=single?'radio':'checkbox';control.name=group?'choice-'+sheetIndex+'-'+group:'choice-'+k;control.value=o.label;control.checked=selected.has(o.raw);label.append(control,document.createTextNode(' '+o.label));row.append(label);
+  let detail=null;if(o.detail){detail=document.createElement('input');detail.type='text';detail.maxLength=200;detail.value=selected.get(o.raw)||'';detail.placeholder=o.unit?'수량 ('+o.unit+')':o.hint+' 입력';detail.setAttribute('aria-label',o.label+' '+o.hint);detail.disabled=!control.checked;detail.oninput=update;row.append(detail);if(o.unit)row.append(node('span',' '+o.unit));}
+  controls.push({control,option:o,detail});control.onchange=()=>{if(single){for(const v of controls)if(v.detail)v.detail.disabled=!v.control.checked;}else if(detail)detail.disabled=!control.checked;update();if(group)renderSheet()};box.append(row);
+ }
+ if(single){const clear=node('button','선택 해제');clear.type='button';clear.className='clear-choice';clear.onclick=()=>{if(group){for(const other of current.sheets[sheetIndex].rows.flat().filter(v=>v.check&&choiceGroup(v)===group))delete answers[key(other.ref)];}else delete answers[k];edit();renderSheet()};box.append(clear);}
+ if(answers[k]&&selected.size===0)box.append(node('small','이전 입력: '+answers[k]+' (선택 항목을 다시 확인해 주세요)'));
+ td.append(box);return true;
+}
+function cellNode(c,ref=c.ref,label=''){
+ const td=document.createElement('td');td.rowSpan=c.span[0];td.colSpan=c.span[1];if(c.highlight)td.classList.add('highlight');if(c.check&&choiceNode(c,td))return td;
+ if(c.label){td.classList.add('label');td.append(node('span',c.label))}if(c.highlight)td.classList.add('highlight');
+ if(c.input||c.check){const input=document.createElement('textarea');input.value=answers[key(ref)]||'';input.maxLength=4000;input.setAttribute('aria-label',label||current.sheets[sheetIndex].name+' '+ref+(c.label?' '+c.label:''));input.dataset.ref=ref;if(c.check)input.placeholder='해당 항목을 적어주세요';input.oninput=()=>{const k=key(ref);if(input.value)answers[k]=input.value;else delete answers[k];edit()};td.append(input)}return td;
+}
+function renderSheet(){
+ const s=current.sheets[sheetIndex],bands=rosters(current,sheetIndex);$('sheetTitle').textContent=s.name;$('grid').replaceChildren();
+ s.rows.forEach((row,index)=>{const tr=document.createElement('tr');row.forEach(c=>tr.append(cellNode(c)));$('grid').append(tr);
+ for(const b of bands.filter(b=>b.end===index)){
+ (extraRows[b.id]||[]).forEach((id,n)=>{const tr=document.createElement('tr');tr.className='extra-row';b.template.forEach((c,i)=>{const td=cellNode(c,extraRef(b,id,b.columns[i]),b.title+' 추가 '+(n+1)+' '+(b.labels[i]||b.columns[i]));if(i===0){const remove=node('button','추가 행 삭제');remove.type='button';remove.className='remove-row';remove.setAttribute('aria-label',b.title+' 추가 '+(n+1)+' 삭제');remove.onclick=()=>{const refs=b.columns.map(col=>key(extraRef(b,id,col)));if(refs.some(ref=>answers[ref])&&!confirm('이 추가 행의 입력 내용을 삭제할까요?'))return;extraRows[b.id]=extraRows[b.id].filter(v=>v!==id);refs.forEach(ref=>delete answers[ref]);edit();renderSheet()};td.append(remove)}tr.append(td)});$('grid').append(tr)});
+ const action=document.createElement('tr'),td=document.createElement('td');td.colSpan=b.width;td.className='roster-actions';const add=node('button','+ 명단 행 추가');add.setAttribute('aria-label',b.title+' 행 추가');add.onclick=()=>{const ids=extraRows[b.id]||[];if(ids.length>=500){message('한 명단당 추가 행은 500개까지 지원합니다.');return}extraRows[b.id]=[...ids,'r'+crypto.randomUUID().replaceAll('-','').slice(0,24)];edit();renderSheet();const added=$('grid').querySelector('[data-ref="'+extraRef(b,extraRows[b.id].at(-1),b.columns[0])+'"]');added?.focus()};td.append(node('span',b.title+' · '),add);action.append(td);$('grid').append(action);
+ }
+ });[...$('tabs').children].forEach((b,i)=>b.classList.toggle('active',i===sheetIndex));
+}
 function show(which){$('list').hidden=which!=='list';$('form').hidden=which!=='form';$('admin').hidden=which!=='admin'}
-function openForm(id,year=new Date().getFullYear(),load=true){current=forms.find(f=>f.id===id);if(!current)return;answers={};notes='';sheetIndex=0;$('year').value=year;$('note').value='';$('confirmed').checked=false;$('title').textContent=current.title+' · '+current.category;$('tabs').replaceChildren();current.sheets.forEach((s,i)=>{const b=node('button',s.name);b.onclick=()=>{sheetIndex=i;renderSheet()};$('tabs').append(b)});show('form');if(load){try{const saved=localStorage.getItem(storageKey());if(saved){const d=JSON.parse(saved);validate(d);answers=d.answers;$('note').value=d.note;message('이 브라우저에 저장된 내용을 불러왔습니다.')}else message('')}catch{message('임시 저장 자료를 읽을 수 없습니다. 제출 파일을 불러오거나 다시 작성하세요.')}}dirty=false;renderSheet();const u=new URL(location.href);u.searchParams.set('form',id);u.searchParams.set('year',year);history.replaceState(null,'',u)}
+function openForm(id,year=new Date().getFullYear(),load=true){current=forms.find(f=>f.id===id);if(!current)return;answers={};extraRows={};notes='';sheetIndex=0;$('year').value=year;$('note').value='';$('confirmed').checked=false;$('title').textContent=current.title+' · '+current.category;$('tabs').replaceChildren();current.sheets.forEach((s,i)=>{const b=node('button',s.name);b.onclick=()=>{sheetIndex=i;renderSheet()};$('tabs').append(b)});show('form');if(load){try{const saved=localStorage.getItem(storageKey());if(saved){const d=JSON.parse(saved);validate(d);answers=d.answers;extraRows=d.extraRows||{};$('note').value=d.note;message('이 브라우저에 저장된 내용을 불러왔습니다.')}else message('')}catch{message('임시 저장 자료를 읽을 수 없습니다. 제출 파일을 불러오거나 다시 작성하세요.')}}dirty=false;renderSheet();const u=new URL(location.href);u.searchParams.set('form',id);u.searchParams.set('year',year);history.replaceState(null,'',u)}
 function cards(){const q=$('search').value.trim();$('cards').replaceChildren();const shown=forms.filter(f=>(f.title+f.category).includes(q));$('count').textContent=shown.length+'개 양식';for(const f of shown){const card=node('article','');card.className='card';card.append(node('small',f.category),node('h3',f.title),node('p',f.sheets.length+'개 시트 · 기존 서식 항목'));const b=node('button','작성하기');b.onclick=()=>openForm(f.id);card.append(b);$('cards').append(card)}}
 function leave(){return !dirty||confirm('아직 저장하지 않은 내용이 있습니다. 다른 화면으로 이동할까요?')}
 $('home').onclick=()=>{if(!leave())return;show('list');history.replaceState(null,'',location.pathname);message('')};$('collect').onclick=()=>{if(leave()){show('admin');message('')}};$('search').oninput=cards;
@@ -22,9 +85,10 @@ $('note').oninput=edit;
 function download(name,data,type){const u=URL.createObjectURL(new Blob([data],{type}));const a=node('a','');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
 $('download').onclick=()=>{try{if(!$('confirmed').checked)throw Error('작성 내용 확인에 체크하세요.');const data=payload();validate(data);download(data.year+'_'+current.title+'_제출.json',JSON.stringify(data,null,2),'application/json');dirty=false;message('제출 파일을 저장했습니다. 내려받은 JSON 파일을 담당자에게 전달하세요. 서버로 자동 제출되지는 않습니다.')}catch(e){message(e.message)}};
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);message('이 양식 링크를 복사했습니다.')}catch{message('주소창의 주소를 복사해 담당 부서에 보내세요.')}};
-$('restore').onchange=async()=>{try{const f=$('restore').files[0];if(!f)return;if(f.size>2000000)throw Error('파일이 너무 큽니다.');const d=JSON.parse(await f.text());const form=validate(d);if(!leave())return;openForm(form.id,d.year,false);answers=d.answers;$('note').value=d.note;renderSheet();dirty=true;message('작성 파일을 불러왔습니다.')}catch(e){message('불러오기 실패: '+e.message)}finally{$('restore').value=''}};
+$('restore').onchange=async()=>{try{const f=$('restore').files[0];if(!f)return;if(f.size>2000000)throw Error('파일이 너무 큽니다.');const d=JSON.parse(await f.text());const form=validate(d);if(!leave())return;openForm(form.id,d.year,false);answers=d.answers;extraRows=d.extraRows||{};$('note').value=d.note;renderSheet();dirty=true;message('작성 파일을 불러왔습니다.')}catch(e){message('불러오기 실패: '+e.message)}finally{$('restore').value=''}};
 function renderImports(){ $('importRows').replaceChildren();for(const d of imports.values()){const f=forms.find(f=>f.id===d.formId),tr=document.createElement('tr');for(const v of [f.title,d.year,d.createdAt,Object.keys(d.answers).length])tr.append(node('td',String(v)));$('importRows').append(tr)}$('importSummary').textContent=imports.size+'개 부서·연도 자료를 읽었습니다. 같은 부서·연도 파일은 마지막으로 선택한 파일을 사용합니다.'}
 $('imports').onchange=async()=>{const errors=[];for(const f of $('imports').files){try{if(f.size>2000000)throw Error('파일이 너무 큽니다.');const d=JSON.parse(await f.text());validate(d);if(d.confirmed!==true)throw Error('확인된 제출 파일이 아닙니다.');imports.set(d.formId+':'+d.year,d)}catch(e){errors.push(f.name+': '+e.message)}}renderImports();message(errors.join('\n'));$('imports').value=''};
-$('csv').onclick=()=>{if(!imports.size){message('회신 파일을 먼저 선택하세요.');return}const rows=[['부서','분류','평가연도','시트','셀','입력값','전달사항']];for(const d of imports.values()){const f=forms.find(f=>f.id===d.formId);for(const [k,v] of Object.entries(d.answers)){const [i,ref]=k.split(':');rows.push([f.title,f.category,d.year,f.sheets[Number(i)].name,ref,v,d.note])}if(!Object.keys(d.answers).length)rows.push([f.title,f.category,d.year,'','','',d.note])}const q=v=>'"'+String(v).replace(/"/g,'""').replace(/^([=+@-])/,'\t$1')+'"';download('실태조서_취합.csv','\ufeff'+rows.map(r=>r.map(q).join(',')).join('\r\n'),'text/csv;charset=utf-8')};
+function exportLabel(f,si,ref,extras){for(const b of rosters(f,si))for(const [n,id] of (extras[b.id]||[]).entries())for(const [i,col] of b.columns.entries())if(ref===extraRef(b,id,col))return b.title+' 추가'+' '+(n+1)+' '+(b.labels[i]||col);return ref}
+$('csv').onclick=()=>{if(!imports.size){message('회신 파일을 먼저 선택하세요.');return}const rows=[['부서','분류','평가연도','시트','셀','입력값','전달사항']];for(const d of imports.values()){const f=forms.find(f=>f.id===d.formId);for(const [k,v] of Object.entries(d.answers)){const [i,ref]=k.split(':');rows.push([f.title,f.category,d.year,f.sheets[Number(i)].name,exportLabel(f,Number(i),ref,d.extraRows||{}),v,d.note])}if(!Object.keys(d.answers).length)rows.push([f.title,f.category,d.year,'','','',d.note])}const q=v=>'"'+String(v).replace(/"/g,'""').replace(/^([=+@-])/,'\t$1')+'"';download('실태조서_취합.csv','\ufeff'+rows.map(r=>r.map(q).join(',')).join('\r\n'),'text/csv;charset=utf-8')};
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
-(async()=>{try{const r=await fetch('forms.json');if(!r.ok)throw Error('양식을 불러오지 못했습니다.');forms=await r.json();cards();const p=new URL(location.href).searchParams;if(p.has('form'))openForm(p.get('form'),Number(p.get('year')||new Date().getFullYear()))}catch(e){message(e.message)}})();
+(async()=>{try{const r=await fetch('forms.json?v=choices-3',{cache:'no-store'});if(!r.ok)throw Error('양식을 불러오지 못했습니다.');forms=await r.json();cards();const p=new URL(location.href).searchParams;if(p.has('form'))openForm(p.get('form'),Number(p.get('year')||new Date().getFullYear()))}catch(e){message(e.message)}})();
